@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="card-title">Your Book Recommendations</h2>
+                <p class="card-text text-muted">Based on your ratings and preferences</p>
+                <div id="recommendationMessage" class="alert alert-info d-none"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="loadingSpinner" class="text-center my-5">
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+    <p class="mt-2">Loading your personalized recommendations...</p>
+</div>
+
+<div id="recommendationResults" class="row g-4"></div>
+
+<div class="modal fade" id="bookDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="detailBookTitle"></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted" id="detailBookAuthor"></p>
+                <p id="detailBookDescription"></p>
+                <div id="detailBookPreview" class="mt-3"></div>
+
+                <div class="mt-4">
+                    <h6>Rate this book:</h6>
+                    <div class="rating">
+                        <span class="detail-star" data-rating="1">★</span>
+                        <span class="detail-star" data-rating="2">★</span>
+                        <span class="detail-star" data-rating="3">★</span>
+                        <span class="detail-star" data-rating="4">★</span>
+                        <span class="detail-star" data-rating="5">★</span>
+                    </div>
+                    <input type="hidden" id="detailSelectedRating" value="0">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="submitDetailRating">Submit Rating</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    $(document).ready(function () {
+        loadRecommendations();
+
+        function loadRecommendations() {
+            $('#loadingSpinner').show();
+            $('#recommendationResults').empty();
+
+            $.ajax({
+                url: '/recommendations',
+                method: 'GET',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                success: function (response) {
+                    $('#loadingSpinner').hide();
+
+                    if (!response.success) {
+                        alert(response.message || 'Error loading recommendations');
+                        return;
+                    }
+
+                    if (response.message) {
+                        $('#recommendationMessage').text(response.message).removeClass('d-none');
+                    } else {
+                        $('#recommendationMessage').addClass('d-none');
+                    }
+
+                    displayRecommendations(response.recommendations);
+                },
+                error: function () {
+                    $('#loadingSpinner').hide();
+                    alert('Error connecting to server');
+                }
+            });
+        }
+
+        function escapeHtml(text) {
+            return $('<div>').text(text).html();
+        }
+
+        function displayRecommendations(books) {
+            const resultsDiv = $('#recommendationResults');
+            resultsDiv.empty();
+
+            if (books.length === 0) {
+                resultsDiv.html('<div class="col-12 text-center"><p>No recommendations available. Try rating more books.</p></div>');
+                return;
+            }
+
+            books.forEach(book => {
+                const bookDescription = book.description || 'No description available';
+                const truncatedDescription = bookDescription.length > 150 ?
+                    bookDescription.substring(0, 150) + '...' : bookDescription;
+
+                const previewButton = book.previewLink ?
+                    `<a href="${escapeHtml(book.previewLink)}" target="_blank" class="btn btn-sm btn-success me-2">Preview</a>`
+                    : '';
+                const imageHtml = book.image ? `<img src="${escapeHtml(book.image)}" class="card-img-top" alt="Book image">` : '';
+
+                const card = `
+                    <div class="col-md-4 mb-4">
+                        <div class="card book-card h-100"
+                             data-title="${escapeHtml(book.title)}"
+                            data-author="${escapeHtml(book.authors || 'Unknown author')}"
+                            data-description="${escapeHtml(bookDescription)}"
+                            data-preview="${escapeHtml(book.previewLink || '')}"
+                            data-image="${escapeHtml(book.image || '')}">
+                            ${imageHtml}
+                            <div class="card-body">
+                                <h5 class="card-title">${escapeHtml(book.title)}</h5>
+                                <h6 class="card-subtitle mb-2 text-muted">${escapeHtml(book.authors || 'Unknown author')}</h6>
+                                <p class="card-text">${escapeHtml(truncatedDescription)}</p>
+                                <div class="btn-group" role="group">
+                                    <button class="btn btn-sm btn-outline-primary rate-book">Rate</button>
+                                    <button class="btn btn-sm btn-primary view-details">View Details</button>
+                                    ${previewButton}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                resultsDiv.append(card);
+            });
+
+            $('.view-details').click(function () {
+                const card = $(this).closest('.book-card');
+                const title = card.data('title');
+                const author = card.data('author');
+                const description = card.data('description');
+                const previewLink = card.data('preview');
+                const image = card.data('image');
+
+                $('#detailBookTitle').text(title);
+                $('#detailBookAuthor').text(author);
+                $('#detailBookDescription').text(description);
+                $('#detailSelectedRating').val(0);
+                $('.detail-star').removeClass('active');
+
+                // Display preview link if available
+                const previewDiv = $('#detailBookPreview');
+                let html = '';
+
+                if (image && image.trim() !== '') {
+                    html += `
+        <div class="text-center mb-3">
+            <img src="${escapeHtml(image)}" class="img-fluid rounded" style="max-height: 300px;" alt="Book image">
+        </div>
+    `;
+                }
+
+                if (previewLink && previewLink.trim() !== '') {
+                    html += `
+        <div class="alert alert-info">
+            <strong>Book Preview:</strong> 
+            <a href="${escapeHtml(previewLink)}" target="_blank" class="btn btn-sm btn-primary ms-2">
+                View Online Preview
+            </a>
+        </div>
+    `;
+                }
+
+                previewDiv.html(html);
+
+
+                const detailsModal = new bootstrap.Modal(document.getElementById('bookDetailsModal'));
+                detailsModal.show();
+            });
+
+            $('.rate-book').click(function () {
+                const card = $(this).closest('.book-card');
+                const title = card.data('title');
+                const author = card.data('author');
+
+                $('#detailBookTitle').text(title);
+                $('#detailBookAuthor').text(author);
+                $('#detailSelectedRating').val(0);
+                $('.detail-star').removeClass('active');
+
+                const detailsModal = new bootstrap.Modal(document.getElementById('bookDetailsModal'));
+                detailsModal.show();
+            });
+        }
+
+        $('.detail-star').hover(
+            function () {
+                const rating = $(this).data('rating');
+                highlightDetailStars(rating);
+            },
+            function () {
+                const selectedRating = $('#detailSelectedRating').val();
+                highlightDetailStars(selectedRating);
+            }
+        );
+
+        $('.detail-star').click(function () {
+            const rating = $(this).data('rating');
+            $('#detailSelectedRating').val(rating);
+            highlightDetailStars(rating);
+        });
+
+        function highlightDetailStars(rating) {
+            $('.detail-star').removeClass('active');
+            $('.detail-star').each(function () {
+                if ($(this).data('rating') <= rating) {
+                    $(this).addClass('active');
+                }
+            });
+        }
+
+        $('#submitDetailRating').click(function () {
+            const title = $('#detailBookTitle').text();
+            const rating = $('#detailSelectedRating').val();
+
+            if (rating === '0') {
+                alert('Please select a rating');
+                return;
+            }
+
+            $.ajax({
+                url: '/rate',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ title: title, score: rating }),
+                success: function (response) {
+                    if (response.success) {
+                        bootstrap.Modal.getInstance(document.getElementById('bookDetailsModal')).hide();
+                        alert('Thank you for your rating! Your recommendations will update on your next visit.');
+                    } else {
+                        alert(response.message || 'Error saving rating');
+                    }
+                },
+                error: function () {
+                    alert('Error connecting to server');
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}

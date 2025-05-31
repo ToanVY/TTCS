@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center mb-5">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-body text-center">
+                <h1 class="display-4 mb-4">Find Your Next Great Book</h1>
+                <p class="lead">Search for books, rate them, and get personalized recommendations based on your
+                    preferences.</p>
+
+                <div class="mt-4">
+                    <div class="input-group">
+                        <input type="text" id="searchInput" class="form-control form-control-lg"
+                            placeholder="Search for a book...">
+                        <button class="btn btn-primary" type="button" id="searchButton">Search</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Thêm section cho popular books -->
+<div class="row mb-4">
+    <div class="col-12">
+        <h3 class="text-center mb-4" id="resultsTitle">Popular Books</h3>
+    </div>
+</div>
+
+<div id="searchResults" class="row g-4 mt-2"></div>
+
+<div class="modal fade" id="ratingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Rate this book</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <h4 id="bookTitle"></h4>
+                <p id="bookAuthor" class="text-muted"></p>
+                <div class="rating mt-4">
+                    <span class="star" data-rating="1">★</span>
+                    <span class="star" data-rating="2">★</span>
+                    <span class="star" data-rating="3">★</span>
+                    <span class="star" data-rating="4">★</span>
+                    <span class="star" data-rating="5">★</span>
+                </div>
+                <input type="hidden" id="selectedRating" value="0">
+                <input type="hidden" id="selectedBookTitle" value="">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="submitRating">Submit Rating</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Book Details Modal -->
+<div class="modal fade" id="bookDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="detailBookTitle"></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted" id="detailBookAuthor"></p>
+                <p id="detailBookDescription"></p>
+                <div id="detailBookPreview" class="mt-3"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    $(document).ready(function () {
+        // Load popular books when page loads
+        loadPopularBooks();
+
+        // Search functionality
+        $('#searchButton').click(function () {
+            searchBooks();
+        });
+
+        $('#searchInput').keypress(function (e) {
+            if (e.which == 13) {
+                searchBooks();
+            }
+        });
+
+        // Function to load popular books
+        function loadPopularBooks() {
+            $.ajax({
+                url: '/popular-books',
+                success: function (data) {
+                    $('#resultsTitle').text('Popular Books');
+                    displaySearchResults(data);
+                },
+                error: function () {
+                    console.log('Error loading popular books');
+                }
+            });
+        }
+
+        function searchBooks() {
+            const query = $('#searchInput').val().trim();
+            if (!query) {
+                // If search is empty, load popular books again
+                loadPopularBooks();
+                return;
+            }
+
+            $.ajax({
+                url: '/search',
+                data: { query: query },
+                success: function (data) {
+                    $('#resultsTitle').text('Search Results');
+                    displaySearchResults(data);
+                }
+            });
+        }
+
+        function displaySearchResults(books) {
+            console.log(books);
+            const resultsDiv = $('#searchResults');
+            resultsDiv.empty();
+
+            if (books.length === 0) {
+                resultsDiv.html('<div class="col-12 text-center"><p>No books found. Try a different search.</p></div>');
+                return;
+            }
+
+            books.forEach(book => {
+                const previewButton = book.previewLink ?
+                    `<a href="${escapeHtml(book.previewLink)}" target="_blank" class="btn btn-sm btn-success me-2">Preview</a>`
+                    : '';
+
+                const imageHtml = book.image ? `<img src="${escapeHtml(book.image)}" class="card-img-top" alt="Book image">` : '';
+
+                const card = `
+                    <div class="col-md-4">
+                        <div class="card book-card" 
+                            data-title="${escapeHtml(book.Title)}" 
+                            data-author="${escapeHtml(book.authors || 'Unknown author')}" 
+                            data-description="${escapeHtml(book.description || 'No description available')}"
+                            data-preview="${escapeHtml(book.previewLink || '')}"
+                            data-image="${escapeHtml(book.image || '')}">
+                            ${imageHtml}
+                            <div class="card-body">
+                                <h5 class="card-title">${escapeHtml(book.Title)}</h5>
+                                <p class="card-text text-muted">${escapeHtml(book.authors || 'Unknown author')}</p>
+                                <div class="btn-group" role="group">
+                                    <button class="btn btn-sm btn-outline-primary rate-book">Rate</button>
+                                    <button class="btn btn-sm btn-primary view-details">View Details</button>
+                                    ${previewButton}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                resultsDiv.append(card);
+            });
+
+            // Gắn lại event listeners
+            $('.rate-book').click(function () {
+                const card = $(this).closest('.book-card');
+                const title = card.data('title');
+                const author = card.data('author');
+
+                $('#bookTitle').text(title);
+                $('#bookAuthor').text(author);
+                $('#selectedBookTitle').val(title);
+                $('#selectedRating').val(0);
+                $('.star').removeClass('active');
+
+                const ratingModal = new bootstrap.Modal(document.getElementById('ratingModal'));
+                ratingModal.show();
+            });
+
+            $('.view-details').click(function () {
+                const card = $(this).closest('.book-card');
+                const title = card.data('title');
+                const author = card.data('author');
+                const description = card.data('description');
+                const previewLink = card.data('preview');
+                const image = card.data('image');
+
+                $('#detailBookTitle').text(title);
+                $('#detailBookAuthor').text(author);
+                $('#detailBookDescription').text(description);
+
+                // Display preview link if available
+                const previewDiv = $('#detailBookPreview');
+                let html = '';
+
+                // Hiển thị ảnh nếu có
+                if (image && image.trim() !== '') {
+                    html += `
+        <div class="text-center mb-3">
+            <img src="${escapeHtml(image)}" class="img-fluid rounded" style="max-height: 300px;" alt="Book image">
+        </div>
+    `;
+                }
+
+                // Hiển thị preview link nếu có
+                if (previewLink && previewLink.trim() !== '') {
+                    html += `
+        <div class="alert alert-info">
+            <strong>Book Preview:</strong> 
+            <a href="${escapeHtml(previewLink)}" target="_blank" class="btn btn-sm btn-primary ms-2">
+                View Online Preview
+            </a>
+        </div>
+    `;
+                }
+
+                previewDiv.html(html);
+
+                const detailsModal = new bootstrap.Modal(document.getElementById('bookDetailsModal'));
+                detailsModal.show();
+            });
+        }
+
+        // Rating functionality
+        $('.star').hover(
+            function () {
+                const rating = $(this).data('rating');
+                highlightStars(rating);
+            },
+            function () {
+                const selectedRating = $('#selectedRating').val();
+                highlightStars(selectedRating);
+            }
+        );
+
+        $('.star').click(function () {
+            const rating = $(this).data('rating');
+            $('#selectedRating').val(rating);
+            highlightStars(rating);
+        });
+
+        function highlightStars(rating) {
+            $('.star').removeClass('active');
+            $('.star').each(function () {
+                if ($(this).data('rating') <= rating) {
+                    $(this).addClass('active');
+                }
+            });
+        }
+
+        // Submit rating
+        $('#submitRating').click(function () {
+            const title = $('#selectedBookTitle').val();
+            const rating = $('#selectedRating').val();
+
+            if (rating === '0') {
+                alert('Please select a rating');
+                return;
+            }
+
+            $.ajax({
+                url: '/rate',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ title: title, score: rating }),
+                success: function (response) {
+                    if (response.success) {
+                        bootstrap.Modal.getInstance(document.getElementById('ratingModal')).hide();
+                        alert('Thank you for your rating!');
+                    } else {
+                        alert(response.message || 'Error saving rating');
+                    }
+                },
+                error: function () {
+                    alert('Error connecting to server');
+                }
+            });
+        });
+    });
+
+    function escapeHtml(text) {
+        return $('<div>').text(text).html();
+    }
+</script>
+{% endblock %}
